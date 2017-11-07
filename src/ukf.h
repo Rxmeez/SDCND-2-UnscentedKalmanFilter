@@ -107,6 +107,12 @@ public:
    * @param meas_package The measurement at k+1
    */
   void UpdateRadar(MeasurementPackage meas_package);
+
+  /**
+   * Updates the state and the state covariance matrix of the UKF
+   *
+   */
+  void UpdateUKF(MeasurementPackage meas_package, MatrixXd Zsig, int n_z);
 };
 
 #endif /* UKF_H */

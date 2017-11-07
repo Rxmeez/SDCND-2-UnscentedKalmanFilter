@@ -61,8 +61,11 @@ UKF::UKF() {
   //initial corvariance matrix
   P_ = MatrixXd(n_x_, n_x_);
 
+  //number of sigma points
+  n_sig_ = 2 * n_aug_ + 1
+
   //sigma points
-  Xsig_pred = MatrixXd(n_x_, 2 * n_aug_ + 1);
+  Xsig_pred = MatrixXd(n_x_, n_sig_);
 
   //sigma point spreading variable
   lambda_ = 3 - n_aug_;
@@ -179,7 +182,6 @@ void UKF::Prediction(double delta_t) {
   Complete this function! Estimate the object's location. Modify the state
   vector, x_. Predict sigma points, the state, and the state covariance matrix.
   */
-  float delta_t2 = delta_t * delta_t;
 
   //initial augmented state VectorXd
   VectorXd x_aug_ = VectorXd(n_aug_);
@@ -188,7 +190,7 @@ void UKF::Prediction(double delta_t) {
   MatrixXd P_aug_ = MatrixXd(n_aug_, n_aug_);
 
   //sigma point matrix
-  MatrixXd Xsig_aug_ = MatrixXd(n_aug_, n_aug_);
+  MatrixXd Xsig_aug_ = MatrixXd(n_aug_, n_sig_);
 
   //fill in augmented matrices
   x_aug_.fill(0);
@@ -208,6 +210,63 @@ void UKF::Prediction(double delta_t) {
     Xsig_aug_.col(i+1+n_aug) = x_aug_ - sqrt(lambda_+n_aug_) * L.col(i);
   }
 
+  //predict sigma points
+  for (int i = 0; i < n_sig_; i++){
+    //extract values for better readability
+    double p_x = Xsig_aug_(0, i);
+    double p_y = Xsig_aug_(1, i);
+    double v = Xsig_aug_(2, i);
+    double yaw = Xsig_aug_(3, i);
+    double yawd = Xsig_aug_(4, i);
+    double nu_a = Xsig_aug_(5, i);
+    double nu_yawdd = Xsig_aug_(6, i);
+
+    double delta_t2 = delta_t * delta_t;
+    double yawdd_dt = yawd * delta_t;
+
+    //predicted state values
+    double px_p, py_p;
+
+    //avoid division by zero
+    if (fabs(yawd) > 0.001) {
+        px_p = p_x + v/yawd * ( sin (yaw + yawd*delta_t) - sin(yaw));
+        py_p = p_y + v/yawd * ( cos(yaw) - cos(yaw+yawd*delta_t) );
+    }
+    else {
+        px_p = p_x + v*delta_t*cos(yaw);
+        py_p = p_y + v*delta_t*sin(yaw);
+    }
+
+    double v_p = v;
+    double yaw_p = yaw + yawd*delta_t;
+    double yawd_p = yawd;
+
+    //add noise
+    px_p = px_p + 0.5*nu_a*delta_t*delta_t * cos(yaw);
+    py_p = py_p + 0.5*nu_a*delta_t*delta_t * sin(yaw);
+    v_p = v_p + nu_a*delta_t;
+
+    yaw_p = yaw_p + 0.5*nu_yawdd*delta_t*delta_t;
+    yawd_p = yawd_p + nu_yawdd*delta_t;
+
+    //write predicted sigma point into right column
+    Xsig_pred(0,i) = px_p;
+    Xsig_pred(1,i) = py_p;
+    Xsig_pred(2,i) = v_p;
+    Xsig_pred(3,i) = yaw_p;
+    Xsig_pred(4,i) = yawd_p;
+  }
+  // Predicted state mean
+  x_ = Xsig_pred_ * weights_; // vectorised sum
+  // Predicted state covariance matrix
+  P_.fill(0.0);
+  for (int i = 0; i < n_sig_; i++) {  //iterate over sigma points
+    // State difference
+    VectorXd x_diff = Xsig_pred_.col(i) - x_;
+    // Angle normalization
+    NormAng(&(x_diff(3)));
+    P_ = P_ + weights_(i) * x_diff * x_diff.transpose() ;
+  }
 }
 
 /**
@@ -223,6 +282,14 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
 
   You'll also need to calculate the lidar NIS.
   */
+  // Set measurement dimension
+  int n_z = 2;
+  // Create matrix for sigma points in measurement space
+  // Transform sigma points into measurement space
+  MatrixXd Zsig = Xsig_pred_.block(0, 0, n_z, n_sig_);
+  UpdateUKF(meas_package, Zsig, n_z);
+
+
 }
 
 /**
@@ -238,4 +305,88 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
 
   You'll also need to calculate the radar NIS.
   */
+
+  // Set measurement dimension, radar can measure r, phi, and r_dot
+  int n_z = 3;
+  // Create matrix for sigma points in measurement space
+  MatrixXd Zsig = MatrixXd(n_z, n_sig_);
+  // Transform sigma points into measurement space
+  for (int i = 0; i < n_sig_; i++) {
+    // extract values for better readibility
+    double p_x = Xsig_pred_(0,i);
+    double p_y = Xsig_pred_(1,i);
+    double v  = Xsig_pred_(2,i);
+    double yaw = Xsig_pred_(3,i);
+    double v1 = cos(yaw)*v;
+    double v2 = sin(yaw)*v;
+    // Measurement model
+    Zsig(0,i) = sqrt(p_x*p_x + p_y*p_y);          //r
+    Zsig(1,i) = atan2(p_y,p_x);                   //phi
+    Zsig(2,i) = (p_x*v1 + p_y*v2 ) / Zsig(0,i);   //r_dot
+  }
+  UpdateUKF(meas_package, Zsig, n_z);
+}
+
+// Universal update function
+void UKF::UpdateUKF(MeasurementPackage meas_package, MatrixXd Zsig, int n_z){
+  // Mean predicted measurement
+  VectorXd z_pred = VectorXd(n_z);
+  z_pred  = Zsig * weights_;
+  //measurement covariance matrix S
+  MatrixXd S = MatrixXd(n_z, n_z);
+  S.fill(0.0);
+  for (int i = 0; i < n_sig_; i++) {
+    // Residual
+    VectorXd z_diff = Zsig.col(i) - z_pred;
+    // Angle normalization
+    NormAng(&(z_diff(1)));
+    S = S + weights_(i) * z_diff * z_diff.transpose();
+  }
+  // Add measurement noise covariance matrix
+  MatrixXd R = MatrixXd(n_z, n_z);
+  if (meas_package.sensor_type_ == MeasurementPackage::RADAR){ // Radar
+    R = R_radar_;
+  }
+  else if (meas_package.sensor_type_ == MeasurementPackage::LASER){ // Lidar
+    R = R_lidar_;
+  }
+  S = S + R;
+
+  // Create matrix for cross correlation Tc
+  MatrixXd Tc = MatrixXd(n_x_, n_z);
+  // Calculate cross correlation matrix
+  Tc.fill(0.0);
+  for (int i = 0; i < n_sig_; i++) {
+    //residual
+    VectorXd z_diff = Zsig.col(i) - z_pred;
+    if (meas_package.sensor_type_ == MeasurementPackage::RADAR){ // Radar
+      // Angle normalization
+      NormAng(&(z_diff(1)));
+    }
+    // State difference
+    VectorXd x_diff = Xsig_pred_.col(i) - x_;
+    // Angle normalization
+    NormAng(&(x_diff(3)));
+    Tc = Tc + weights_(i) * x_diff * z_diff.transpose();
+  }
+  // Measurements
+  VectorXd z = meas_package.raw_measurements_;
+  //Kalman gain K;
+  MatrixXd K = Tc * S.inverse();
+  // Residual
+  VectorXd z_diff = z - z_pred;
+  if (meas_package.sensor_type_ == MeasurementPackage::RADAR){ // Radar
+    // Angle normalization
+    NormAng(&(z_diff(1)));
+  }
+  // Update state mean and covariance matrix
+  x_ = x_ + K * z_diff;
+  P_ = P_ - K * S * K.transpose();
+  // Calculate NIS
+  if (meas_package.sensor_type_ == MeasurementPackage::RADAR){ // Radar
+	NIS_radar_ = z.transpose() * S.inverse() * z;
+  }
+  else if (meas_package.sensor_type_ == MeasurementPackage::LASER){ // Lidar
+	NIS_laser_ = z.transpose() * S.inverse() * z;
+  }
 }
