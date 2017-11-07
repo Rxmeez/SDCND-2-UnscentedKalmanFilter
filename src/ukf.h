@@ -79,6 +79,11 @@ public:
   virtual ~UKF();
 
   /**
+   *  Angle normalization to [-Pi, Pi]
+   */
+  void NormAng(double *ang);
+
+  /**
    * ProcessMeasurement
    * @param meas_package The latest measurement data of either radar or laser
    */
