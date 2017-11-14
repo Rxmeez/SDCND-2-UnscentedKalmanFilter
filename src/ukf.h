@@ -6,6 +6,7 @@
 #include <vector>
 #include <string>
 #include <fstream>
+#include "tools.h"
 
 using Eigen::MatrixXd;
 using Eigen::VectorXd;
@@ -66,6 +67,21 @@ public:
 
   ///* Sigma point spreading parameter
   double lambda_;
+
+  ///* Number of sigma points
+  int n_sig_;
+
+  ///* Radar measurement noise covariance matrices
+  MatrixXd R_radar_;
+
+  ///* Lidar measurement noise covariance matrices
+  MatrixXd R_lidar_;
+
+  ///* the current NIS for radar
+  double NIS_radar_;
+
+  ///* the current NIS for laser
+  double NIS_laser_;
 
 
   /**
