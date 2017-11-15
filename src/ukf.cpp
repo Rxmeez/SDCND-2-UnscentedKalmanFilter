@@ -24,10 +24,10 @@ UKF::UKF() {
   P_ = MatrixXd(5, 5);
 
   // Process noise standard deviation longitudinal acceleration in m/s^2
-  std_a_ = 30;
+  std_a_ = 2;
 
   // Process noise standard deviation yaw acceleration in rad/s^2
-  std_yawdd_ = 30;
+  std_yawdd_ = 1;
 
   // Laser measurement noise standard deviation position1 in m
   std_laspx_ = 0.15;
@@ -51,6 +51,10 @@ UKF::UKF() {
 
   Hint: one or more values initialized above might be wildly off...
   */
+  is_initialized_ = false;
+
+  //initialize timestamp
+	time_us_ = 0;
 
   //[px, py, v, yaw_angle, yaw_rate]
   n_x_ = x_.size();
@@ -110,9 +114,9 @@ void UKF::ProcessMeasurement(MeasurementPackage measurement_pack) {
 
     if (measurement_pack.sensor_type_ == MeasurementPackage::RADAR) {
       //reading in the data
-      float rho = measurement_pack.raw_measurements_(0);
-      float phi = measurement_pack.raw_measurements_(1);
-      float rhodot = measurement_pack.raw_measurements_(2);
+      float rho = measurement_pack.raw_measurements_[0];
+      float phi = measurement_pack.raw_measurements_[1];
+      float rhodot = measurement_pack.raw_measurements_[2];
 
       //polar to cartesian coordinates
       float px = rho * cos(phi);
@@ -125,8 +129,8 @@ void UKF::ProcessMeasurement(MeasurementPackage measurement_pack) {
     }
     else if (measurement_pack.sensor_type_ == MeasurementPackage::LASER){
       //velocity == 0
-      float px = measurement_pack.raw_measurements_(0);
-      float py = measurement_pack.raw_measurements_(1);
+      float px = measurement_pack.raw_measurements_[0];
+      float py = measurement_pack.raw_measurements_[1];
 
       x_ << px, py, 0, 0, 0;
 
@@ -153,7 +157,7 @@ void UKF::ProcessMeasurement(MeasurementPackage measurement_pack) {
   }
 
   // timesteps between measurements, dt in seconds
-  float dt = (measurement_pack.timestamp_ - time_us_) / 1000000.0;
+  double dt = (measurement_pack.timestamp_ - time_us_) / 1000000.0;
   time_us_ = measurement_pack.timestamp_;
 
   Prediction(dt);
@@ -362,7 +366,7 @@ void UKF::UpdateUKF(MeasurementPackage meas_package, MatrixXd Zsig, int n_z){
     // State difference
     VectorXd x_diff = Xsig_pred_.col(i) - x_;
     // Angle normalization
-    NormAng(&(x_diff(3)));
+    //--> CHANGE:: NormAng(&(x_diff(3)));
     Tc = Tc + weights_(i) * x_diff * z_diff.transpose();
   }
   // Measurements
