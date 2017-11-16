@@ -53,9 +53,6 @@ UKF::UKF() {
   */
   is_initialized_ = false;
 
-  //initialize timestamp
-	time_us_ = 0;
-
   //[px, py, v, yaw_angle, yaw_rate]
   n_x_ = x_.size();
 
@@ -190,9 +187,6 @@ void UKF::Prediction(double delta_t) {
 
   //sigma point matrix
   MatrixXd Xsig_aug_ = MatrixXd(n_aug_, n_sig_);
-
-  //sigma points
-  MatrixXd Xsig_pred_ = MatrixXd(n_x_, n_sig_);
 
   //fill in augmented matrices
   x_aug_.fill(0);
